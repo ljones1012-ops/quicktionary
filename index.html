@@ -146,11 +146,57 @@ async function lookup(raw){
   showStatus("Looking up “"+word+"”…");
   $("#entry").innerHTML='<div class="empty loading">Finding the right words…</div>';
   try{
-    const res=await fetch("https://api.dictionaryapi.dev/api/v2/entries/en/"+encodeURIComponent(word));
-    if(!res.ok) throw new Error(res.status===404?"No entry found for that word. Try checking the spelling.":"The dictionary service is temporarily unavailable.");
-    const entries=await res.json();
-    const data=entries[0];
-    renderEntry(data);
+   
+const res = await fetch(
+  "https://api.datamuse.com/words?sp=" +
+  encodeURIComponent(word) + "&md=dpr&ipa=1&max=10"
+);
+if (!res.ok) throw new Error("Dictionary service unavailable.");
+
+const entries = await res.json();
+const match = entries.find(
+  item => item.word.toLowerCase() === word.toLowerCase()
+);
+
+if (!match || !match.defs || !match.defs.length) {
+  throw new Error("No definition found for that word.");
+}
+
+const parts = {
+  n: "noun", v: "verb", adj: "adjective",
+  adv: "adverb", u: "other"
+};
+
+const meanings = [];
+for (const raw of match.defs) {
+  const separator = raw.indexOf("\t");
+  const code = separator >= 0 ? raw.slice(0, separator) : "u";
+  const definition = separator >= 0 ? raw.slice(separator + 1) : raw;
+  let group = meanings.find(m => m.partOfSpeech === (parts[code] || code));
+  if (!group) {
+    group = {
+      partOfSpeech: parts[code] || code,
+      definitions: [],
+      synonyms: [],
+      antonyms: []
+    };
+    meanings.push(group);
+  }
+  group.definitions.push({ definition });
+}
+
+const pronunciation = (match.tags || [])
+  .find(tag => tag.startsWith("pron:"));
+
+const data = {
+  word: match.word,
+  phonetic: pronunciation ? pronunciation.slice(5) : "",
+  phonetics: [],
+  meanings
+};
+
+renderEntry(data);
+
     const hasSyn=(data.meanings||[]).some(m=>(m.synonyms||[]).length);
     const hasAnt=(data.meanings||[]).some(m=>(m.antonyms||[]).length);
     const [syn,ant]=await Promise.all([hasSyn?Promise.resolve([]):getRelated(word,"rel_syn"),hasAnt?Promise.resolve([]):getRelated(word,"rel_ant")]);
